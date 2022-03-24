@@ -35,3 +35,9 @@ There is a container which is used to support multiple set of tasks called `quay
 ## Release
 
 Release is done by setting env variable `MY_QUAY_USER=redhat-appstudio`, `BUILD_TAG=$(git rev-parse HEAD)` and running `hack/build-and-push.sh`.
+
+## Testing
+
+Script `./hack/test-builds.sh` creates pipelines and tasks directly in current namespace and executes there test builds. Images are pushed into OpenShift image streams, by setting environment variable `MY_QUAY_USER` the images will be pushed into user's quay repository, in that case creation of secret named `redhat-appstudio-staginguser-pull-secret` is required.
+
+Script `./hack/test-build.sh` provides way to test on custom git repository and pipeline. Usage example: `./hack/test-build.sh https://github.com/jduimovich/spring-petclinic java-builder`.
