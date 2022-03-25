@@ -11,3 +11,5 @@ resources:
 - sanity-label-check.yaml
 - summary.yaml
 - utils-task.yaml
+- cosign-verify.yaml
+- cosign-verify-attestation.yaml
