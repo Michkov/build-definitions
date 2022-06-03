@@ -42,6 +42,10 @@ spec:
     description: The location of the buildah builder image.
     name: BUILDER_IMAGE
     type: string
+  - default: vfs
+    description: Set buildah storage driver
+    name: STORAGE_DRIVER
+    type: string
   # Additional parameter for auth configuration
   - default: ""
     description: Extra parameters passed for the push command when pushing images.
