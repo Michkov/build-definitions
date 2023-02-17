@@ -16,7 +16,7 @@
         "*"
       ],
       "groupName": "Renovate updates",
-      "groupSlug": "all",
+      "groupSlug": "all"
     }
   ],
   "separateMajorMinor": false
