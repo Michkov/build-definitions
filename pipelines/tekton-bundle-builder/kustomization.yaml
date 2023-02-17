@@ -1,0 +1,32 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+- ../template-build
+
+patches:
+# Use the template-build as a template replacing the Pipeline name and the
+# `build-container` step's task reference
+- patch: |-
+    - op: replace
+      path: /metadata/name
+      value: tekton-bundle-builder
+    - op: replace
+      path: /spec/tasks/3/taskRef
+      value:
+        name: tkn-bundle
+        version: "0.1"
+    - op: add
+      path: /spec/tasks/4/params
+      value:
+      - name: IMAGE
+        value: $(params.output-image)
+      - name: CONTEXT
+        value: $(params.path-context)
+    # Remove tasks that assume a binary image
+    - op: remove
+      path: /spec/tasks/11  # sbom-json-check
+    - op: remove
+      path: /spec/tasks/7  # deprecated-base-image-check
+  target:
+    kind: Pipeline
+    name: template-build

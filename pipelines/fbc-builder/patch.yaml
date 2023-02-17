@@ -1,0 +1,73 @@
+---
+- op: replace
+  path: /metadata/name
+  value: fbc-builder
+- op: replace
+  path: /metadata/labels
+  value:
+    "pipelines.openshift.io/used-by": "build-cloud"
+    "pipelines.openshift.io/runtime": "fbc"
+    "pipelines.openshift.io/strategy": "fbc"
+- op: replace
+  path: /spec/tasks/3/taskRef
+  value:
+    name: buildah
+    version: "0.1"
+- op: add
+  path: /spec/tasks/3/params
+  value:
+  - name: IMAGE
+    value: $(params.output-image)
+  - name: DOCKERFILE
+    value: $(params.dockerfile)
+  - name: CONTEXT
+    value: $(params.path-context)
+  - name: DOCKER_AUTH
+    value: "$(tasks.init.results.container-registry-secret)"
+  - name: HERMETIC
+    value: "true"
+- op: add
+  path: /spec/tasks/-
+  value:
+    name: fbc-validate
+    when:
+    - input: $(params.skip-checks)
+      operator: in
+      values: ["false"]
+    runAfter:
+      - fbc-label-check
+    taskRef:
+      name: fbc-validation
+      version: "0.1"
+    params:
+    - name: IMAGE_URL
+      value: $(tasks.build-container.results.IMAGE_URL)
+    - name: IMAGE_DIGEST
+      value: $(tasks.build-container.results.IMAGE_DIGEST)
+    workspaces:
+      - name: workspace
+        workspace: workspace
+- op: add
+  path: /spec/tasks/-
+  value:
+    name: fbc-related-image-check
+    when:
+    - input: $(params.skip-checks)
+      operator: in
+      values: ["false"]
+    runAfter:
+      - fbc-validate
+    taskRef:
+      name: fbc-related-image-check
+      version: "0.1"
+    workspaces:
+      - name: workspace
+        workspace: workspace
+- op: replace
+  path: /spec/tasks/6/name
+  value: fbc-label-check
+- op: add
+  path: /spec/tasks/6/params
+  value:
+  - name: POLICY_NAMESPACE
+    value: fbc_checks

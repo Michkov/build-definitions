@@ -1,0 +1,60 @@
+---
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  labels:
+    app.kubernetes.io/version: "0.1"
+  annotations:
+    tekton.dev/pipelines.minVersion: "0.12.1"
+    tekton.dev/tags: "appstudio, hacbs"
+  name: clair-scan
+spec:
+  params:
+    - name: image-digest
+      description: Image digest to scan
+    - name: image-url
+      description: Url to image
+    - name: docker-auth
+      description: folder with config.json for container auth
+      default: ""
+  results:
+    - name: HACBS_TEST_OUTPUT
+      description: test output
+  steps:
+    - name: get-vulnerabilities
+      image: quay.io/redhat-appstudio/clair-in-ci:latest
+      env:
+        - name: DOCKER_CONFIG
+          value: $(params.docker-auth)
+      script: |
+        #!/usr/bin/env bash
+
+        imagewithouttag=$(echo '$(params.image-url)' | sed "s/\(.*\):.*/\1/" | tr -d '\n')
+        # strip new-line escape symbol from parameter and save it to variable
+        imageanddigest=$(echo $imagewithouttag@'$(params.image-digest)')
+
+        clair-action report --image-ref=$imageanddigest --db-path=/tmp/matcher.db --format=quay > /tekton/home/clair-result.json || true
+    - name: conftest-vulnerabilities
+      image: quay.io/redhat-appstudio/hacbs-test:latest
+      securityContext:
+        capabilities:
+          add:
+            - SETFCAP
+      script: |
+        if [ ! -s /tekton/home/clair-result.json ]; then
+          echo "Previous step [get-vulnerabilities] failed, /tekton/home/clair-result.json is empty."
+        else
+          /usr/bin/conftest test --no-fail /tekton/home/clair-result.json \
+          --policy /project/clair/vulnerabilities-check.rego --namespace required_checks \
+          --output=json | tee /tekton/home/clair-vulnerabilities.json || true
+        fi
+    - name: test-format-result
+      image: quay.io/redhat-appstudio/hacbs-test:latest
+      script: |
+        #!/usr/bin/env bash
+        . /utils.sh
+        HACBS_ERROR_OUTPUT=$(make_result_json -r "ERROR")
+        HACBS_TEST_OUTPUT=
+        parse_hacbs_test_output $(context.task.name) conftest /tekton/home/clair-vulnerabilities.json || true
+
+        echo "${HACBS_TEST_OUTPUT:-${HACBS_ERROR_OUTPUT}}" | tee $(results.HACBS_TEST_OUTPUT.path)

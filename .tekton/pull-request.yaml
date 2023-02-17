@@ -1,0 +1,180 @@
+---
+apiVersion: tekton.dev/v1beta1
+kind: PipelineRun
+metadata:
+  name: build-definitions-pull-request
+  annotations:
+    pipelinesascode.tekton.dev/on-event: "pull_request"
+    pipelinesascode.tekton.dev/on-target-branch: "main"
+    pipelinesascode.tekton.dev/task: "[task/git-clone/0.1/git-clone.yaml, .tekton/tasks/buildah.yaml, .tekton/tasks/yaml-lint.yaml]"
+    pipelinesascode.tekton.dev/task-2: "yaml-lint"
+    pipelinesascode.tekton.dev/max-keep-runs: "5"
+spec:
+  params:
+    - name: repo_url
+      value: "{{ repo_url }}"
+    - name: revision
+      value: "{{ revision }}"
+    - name: e2e_test_namespace
+      value: build-templates-e2e
+  pipelineSpec:
+    params:
+      - name: repo_url
+      - name: revision
+      - name: e2e_test_namespace
+    workspaces:
+      - name: workspace
+    tasks:
+      - name: fetch-repository
+        taskRef:
+          name: git-clone
+        workspaces:
+          - name: output
+            workspace: workspace
+        params:
+          - name: url
+            value: $(params.repo_url)
+          - name: revision
+            value: $(params.revision)
+          - name: depth
+            value: "0"
+      - name: yaml-lint-check
+        runAfter:
+          - fetch-repository
+        taskRef:
+          name: yaml-lint
+        workspaces:
+          - name: shared-workspace
+            workspace: workspace
+        params:
+        - name: args
+          value: ["."]
+      - name: build-container
+        runAfter:
+          - yaml-lint-check
+        params:
+          - name: IMAGE
+            value: quay.io/redhat-appstudio/pull-request-builds:build-definitions-utils-{{revision}}
+          - name: CONTEXT
+            value: appstudio-utils
+        taskRef:
+          name: buildah
+        workspaces:
+          - name: source
+            workspace: workspace
+      - name: build-bundles
+        params:
+          - name: revision
+            value: "{{ revision }}"
+          - name: e2e_test_namespace
+            value: $(params.e2e_test_namespace)
+        runAfter:
+          - build-container
+        workspaces:
+          - name: source
+            workspace: workspace
+        taskSpec:
+          params:
+            - name: revision
+              type: string
+            - name: e2e_test_namespace
+              type: string
+          steps:
+            - name: build-bundles
+              image: quay.io/redhat-appstudio/pull-request-builds:build-definitions-utils-{{revision}}
+              workingDir: $(workspaces.source.path)
+              script: |
+                #!/usr/bin/env bash
+                MY_QUAY_USER=redhat-appstudio-tekton-catalog \
+                TEST_REPO_NAME=pull-request-builds \
+                BUILD_TAG=$(params.revision) \
+                SKIP_BUILD=1 \
+                INSTALL_BUNDLE_NS=$(params.e2e_test_namespace) \
+                hack/build-and-push.sh
+              volumeMounts:
+                - mountPath: /root/.docker/config.json
+                  subPath: .dockerconfigjson
+                  name: quay-secret
+          volumes:
+          - name: quay-secret
+            secret:
+              secretName: redhat-appstudio-tekton-catalog-build-definitions-pull-secret
+          workspaces:
+            - name: source
+      - name: e2e-test
+        params:
+          - name: e2e_test_namespace
+            value: $(params.e2e_test_namespace)
+        runAfter:
+          - build-bundles
+        taskSpec:
+          params:
+            - name: e2e_test_namespace
+              type: string
+          steps:
+            - name: e2e-test
+              image: quay.io/redhat-appstudio/e2e-tests:main
+              imagePullPolicy: Always
+              args: [
+                "--ginkgo.label-filter=build-templates-e2e",
+                "--ginkgo.v",
+                "--ginkgo.no-color"
+              ]
+              env:
+              - name: APP_SUFFIX
+                value: "{{ pull_request_number }}"
+              - name: COMPONENT_REPO_URLS
+                value: "https://github.com/redhat-appstudio-qe/devfile-sample-python-basic,https://github.com/redhat-appstudio-qe/retrodep,https://github.com/cachito-testing/pip-e2e-test,https://github.com/redhat-appstudio-qe/fbc-sample-repo"
+              - name: QUAY_E2E_ORGANIZATION
+                value: redhat-appstudio
+              - name: E2E_APPLICATIONS_NAMESPACE
+                value: "$(params.e2e_test_namespace)"
+              - name: GITHUB_TOKEN
+                valueFrom:
+                  secretKeyRef:
+                    name: github
+                    key: token
+              - name: MY_GITHUB_ORG
+                value: redhat-appstudio-appdata
+      - name: check-task-pipeline-repo-existence
+        runAfter:
+          - build-bundles
+        taskSpec:
+          steps:
+            - name: fail-when-repo-is-missed
+              image: registry.redhat.io/openshift4/ose-tools-rhel8:v4.12
+              workingDir: $(workspaces.source.path)
+              script: |
+                #!/usr/bin/env bash
+                .tekton/scripts/check-task-pipeline-bundle-repos.sh
+          workspaces:
+            - name: source
+        workspaces:
+          - name: source
+            workspace: workspace
+    finally:
+      - name: e2e-cleanup
+        params:
+          - name: e2e_test_namespace
+            value: $(params.e2e_test_namespace)
+        taskSpec:
+          params:
+            - name: e2e_test_namespace
+              type: string
+          steps:
+            - name: e2e-cleanup
+              image: registry.redhat.io/openshift4/ose-cli:v4.12@sha256:9f0cdc00b1b1a3c17411e50653253b9f6bb5329ea4fb82ad983790a6dbf2d9ad
+              script: |
+                #!/usr/bin/env bash
+                # Perform cleanup of resources created by gitops service
+                oc delete --ignore-not-found deployment --all -n $(params.e2e_test_namespace)
+                oc delete --ignore-not-found eventlisteners --all -n $(params.e2e_test_namespace)
+  workspaces:
+    - name: workspace
+      volumeClaimTemplate:
+        spec:
+          accessModes:
+            - ReadWriteOnce
+          resources:
+            requests:
+              storage: 1Gi

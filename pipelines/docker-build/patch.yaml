@@ -1,0 +1,35 @@
+---
+- op: replace
+  path: /metadata/name
+  value: docker-build
+- op: replace
+  path: /metadata/labels
+  value:
+    "pipelines.openshift.io/used-by": "build-cloud"
+    "pipelines.openshift.io/runtime": "generic"
+    "pipelines.openshift.io/strategy": "docker"
+- op: replace
+  path: /spec/tasks/3/taskRef
+  value:
+    name: buildah
+    version: "0.1"
+- op: add
+  path: /spec/tasks/3/params
+  value:
+  - name: IMAGE
+    value: $(params.output-image)
+  - name: DOCKERFILE
+    value: $(params.dockerfile)
+  - name: CONTEXT
+    value: $(params.path-context)
+  - name: DOCKER_AUTH
+    value: "$(tasks.init.results.container-registry-secret)"
+  - name: HERMETIC
+    value: "$(params.hermetic)"
+  - name: PREFETCH_INPUT
+    value: "$(params.prefetch-input)"
+- op: add
+  path: /spec/results/-
+  value:
+    name: JAVA_COMMUNITY_DEPENDENCIES
+    value: $(tasks.build-container.results.JAVA_COMMUNITY_DEPENDENCIES)

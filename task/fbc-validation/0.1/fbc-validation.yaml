@@ -1,0 +1,81 @@
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  labels:
+    app.kubernetes.io/version: "0.1"
+  annotations:
+    tekton.dev/pipelines.minVersion: "0.12.1"
+    tekton.dev/tags: "appstudio, hacbs"
+  name: fbc-validation
+spec:
+  params:
+    - name: IMAGE_URL
+      description: the fully qualified image name
+    - name: IMAGE_DIGEST
+      description: image digest
+  results:
+    - name: HACBS_TEST_OUTPUT
+  workspaces:
+    - name: workspace
+  steps:
+    - name: extract-and-check-binaries
+      image: quay.io/redhat-appstudio/hacbs-test:latest
+      workingDir: $(workspaces.workspace.path)/hacbs/$(context.task.name)
+      securityContext:
+        runAsUser: 0
+      resources:
+        limits:
+          memory: 4Gi
+          cpu: 2
+        requests:
+          memory: 512Mi
+          cpu: 10m
+      script: |
+        #!/usr/bin/env bash
+        source /utils.sh
+        ### Try to extract binaries with configs > check binaries functionality > check opm validate ###
+        conffolder=$(cat ../sanity-inspect-image/image_inspect.json | jq -r '.Labels ."operators.operatorframework.io.index.configs.v1"')
+
+        image_with_digest="$(params.IMAGE_URL)@$(params.IMAGE_DIGEST)"
+
+        mkdir confdir
+        if ! oc image extract "${image_with_digest}" --file /bin/opm --file /bin/grpc_health_probe --path $conffolder/*:confdir/ ; then
+          echo "Unable to extract image! Skipping checking binaries!"
+          HACBS_TEST_OUTPUT="$(make_result_json -r ERROR -f 1 -t 'Unable to extract image! Skipping checking binaries!')"
+          echo "${HACBS_TEST_OUTPUT}" | tee $(results.HACBS_TEST_OUTPUT.path)
+          exit 0
+        fi
+
+        # We have totally 4 checks here currently
+        check_num=4
+        failure_num=0
+        TESTPASSED=true
+        chmod +x opm grpc_health_probe
+
+        if ! ./opm version; then
+          echo "!FAILURE! - opm binary check failed"
+          failure_num=`expr $failure_num + 1`
+          TESTPASSED=false
+        fi
+        if [ ! -f "grpc_health_probe" ]; then
+          echo "!FAILURE! - grpc_health_probe binary check failed"
+          failure_num=`expr $failure_num + 1`
+          TESTPASSED=false
+        fi
+        if ! ./opm validate confdir; then
+          echo "!FAILURE! - opm validate check has failed"
+          failure_num=`expr $failure_num + 1`
+          TESTPASSED=false
+        fi
+        if ! ./opm render confdir | jq -en 'reduce (inputs | select(.schema == "olm.package")) as $obj (0; .+1) == 1'; then
+          echo "!FAILURE! - more than one olm.packages are not permitted in a FBC fragment"
+          failure_num=`expr $failure_num + 1`
+          TESTPASSED=false
+        fi
+        if [ $TESTPASSED == false ]; then
+          HACBS_ERROR_OUTPUT="$(make_result_json -r FAILURE -f $failure_num -s `expr $check_num - $failure_num`)"
+          echo "${HACBS_ERROR_OUTPUT}" | tee $(results.HACBS_TEST_OUTPUT.path)
+        else
+          HACBS_TEST_OUTPUT="$(make_result_json -r SUCCESS -s $check_num)"
+          echo "${HACBS_TEST_OUTPUT}" | tee $(results.HACBS_TEST_OUTPUT.path)
+        fi
