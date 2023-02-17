@@ -13,7 +13,7 @@
       "matchPackagePatterns": [
         "*"
       ],
-      "groupName": "Renovate updates",
+      "groupName": "Renovate updates"
     }
   ]  
 }
