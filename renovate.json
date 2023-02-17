@@ -4,20 +4,14 @@
     "config:base"
   ],
   "tekton": {
-    "fileMatch": ["\\.yaml$", "\\.yml$"],
-    "includePaths": [".tekton/**", "task/**"]
+      "fileMatch": ["\\.yaml$", "\\.yml$"],
+      "includePaths": [".tekton/**", "task/**"]
   },
-  "groupName": "Renovate updates",
-  "groupSlug": "all",
-  "includeForks": true,
   "packageRules": [
     {
-      "matchPackagePatterns": [
-        "*"
-      ],
-      "groupName": "Renovate updates",
-      "groupSlug": "all"
+      "matchPackagePatterns": ["*"],
+      "groupName": "all"
     }
   ],
-  "separateMajorMinor": false
+  "includeForks": true
 }
