@@ -7,13 +7,17 @@
     "fileMatch": ["\\.yaml$", "\\.yml$"],
     "includePaths": [".tekton/**", "task/**"]
   },
+  "groupName": "Renovate updates",
+  "groupSlug": "all",
   "includeForks": true,
   "packageRules": [
     {
       "matchPackagePatterns": [
         "*"
       ],
-      "groupName": "Renovate updates"
+      "groupName": "Renovate updates",
+      "groupSlug": "all",
     }
-  ]  
+  ],
+  "separateMajorMinor": false
 }
