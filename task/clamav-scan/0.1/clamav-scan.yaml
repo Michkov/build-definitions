@@ -21,7 +21,7 @@ spec:
 
   steps:
     - name: extract-and-scan-image
-      image: quay.io/redhat-appstudio/hacbs-test:v1.0.3
+      image: quay.io/redhat-appstudio/hacbs-test:v1.0.10
       workingDir: /work
       # need to change user since 'oc image extract' requires more privileges when running as root
       # https://bugzilla.redhat.com/show_bug.cgi?id=1969929
@@ -69,7 +69,7 @@ spec:
         - mountPath: /secrets/registry-auth
           name: registry-auth
     - name: modify-clam-output-to-json
-      image: quay.io/redhat-appstudio/hacbs-test:v1.0.3
+      image: quay.io/redhat-appstudio/hacbs-test:v1.0.10
       script: |
         #!/usr/bin/env python3.9
         import json
